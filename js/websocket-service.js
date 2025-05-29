@@ -9,13 +9,13 @@ class WebSocketService {
         this.reconnectDelay = 1000;
         this.heartbeatInterval = null;
         this.heartbeatTimeout = null;
-        
+
         // Event listeners
         this.messageListeners = [];
         this.userListeners = [];
         this.typingListeners = [];
         this.connectionListeners = [];
-        
+
         // Configuration
         this.config = {
             // For development, you can use a local WebSocket server
@@ -26,14 +26,14 @@ class WebSocketService {
             reconnectDelay: 1000,     // 1 second
             maxReconnectAttempts: 5
         };
-        
+
         // Bind methods
         this.handleOpen = this.handleOpen.bind(this);
         this.handleMessage = this.handleMessage.bind(this);
         this.handleClose = this.handleClose.bind(this);
         this.handleError = this.handleError.bind(this);
     }
-    
+
     /**
      * Get WebSocket server URL
      * @returns {string} - WebSocket server URL
@@ -42,16 +42,24 @@ class WebSocketService {
         // Check if we're in development or production
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const host = window.location.host;
-        
+
         // For development, try to connect to a local server
         if (host.includes('localhost') || host.includes('127.0.0.1')) {
-            return 'ws://localhost:8080';
+            return 'ws://localhost:8080/ws';
         }
-        
-        // For production, use the same host
-        return `${protocol}//${host}/ws`;
+
+        // For Vercel deployment, you can use a separate WebSocket service
+        // or fall back to offline mode since Vercel doesn't support WebSocket servers
+        // You could use services like Railway, Render, or Heroku for WebSocket server
+
+        // Example: If you deploy WebSocket server separately
+        // return 'wss://your-websocket-server.herokuapp.com/ws';
+
+        // For now, return null to force offline mode in production
+        // This ensures the app works even without a WebSocket server
+        return null;
     }
-    
+
     /**
      * Connect to WebSocket server
      * @param {string} roomCode - Room code to join
@@ -60,31 +68,37 @@ class WebSocketService {
      */
     async connect(roomCode, username) {
         try {
+            // Check if WebSocket server URL is available
+            if (!this.config.serverUrl) {
+                console.log('No WebSocket server URL configured, falling back to offline mode');
+                return false;
+            }
+
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
                 this.disconnect();
             }
-            
+
             console.log(`Connecting to WebSocket server: ${this.config.serverUrl}`);
-            
+
             this.socket = new WebSocket(this.config.serverUrl);
-            
+
             // Set up event listeners
             this.socket.addEventListener('open', this.handleOpen);
             this.socket.addEventListener('message', this.handleMessage);
             this.socket.addEventListener('close', this.handleClose);
             this.socket.addEventListener('error', this.handleError);
-            
+
             // Wait for connection to open
             return new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
                     reject(new Error('Connection timeout'));
                 }, 10000);
-                
+
                 const onOpen = () => {
                     clearTimeout(timeout);
                     this.socket.removeEventListener('open', onOpen);
                     this.socket.removeEventListener('error', onError);
-                    
+
                     // Send join room message
                     this.sendMessage({
                         type: 'join_room',
@@ -92,27 +106,27 @@ class WebSocketService {
                         username,
                         timestamp: Date.now()
                     });
-                    
+
                     resolve(true);
                 };
-                
+
                 const onError = (error) => {
                     clearTimeout(timeout);
                     this.socket.removeEventListener('open', onOpen);
                     this.socket.removeEventListener('error', onError);
                     reject(error);
                 };
-                
+
                 this.socket.addEventListener('open', onOpen);
                 this.socket.addEventListener('error', onError);
             });
-            
+
         } catch (error) {
             console.error('WebSocket connection error:', error);
             return false;
         }
     }
-    
+
     /**
      * Disconnect from WebSocket server
      */
@@ -123,19 +137,19 @@ class WebSocketService {
             this.socket.removeEventListener('message', this.handleMessage);
             this.socket.removeEventListener('close', this.handleClose);
             this.socket.removeEventListener('error', this.handleError);
-            
+
             if (this.socket.readyState === WebSocket.OPEN) {
                 this.socket.close(1000, 'User disconnected');
             }
-            
+
             this.socket = null;
         }
-        
+
         this.isConnected = false;
         this.reconnectAttempts = 0;
         this.notifyConnectionListeners(false);
     }
-    
+
     /**
      * Send message through WebSocket
      * @param {object} data - Data to send
@@ -146,7 +160,7 @@ class WebSocketService {
             console.warn('WebSocket not connected, cannot send message');
             return false;
         }
-        
+
         try {
             this.socket.send(JSON.stringify(data));
             return true;
@@ -155,7 +169,7 @@ class WebSocketService {
             return false;
         }
     }
-    
+
     /**
      * Send chat message
      * @param {string} content - Message content
@@ -173,7 +187,7 @@ class WebSocketService {
             id: generateId()
         });
     }
-    
+
     /**
      * Send typing indicator
      * @param {boolean} isTyping - Whether user is typing
@@ -190,7 +204,7 @@ class WebSocketService {
             timestamp: Date.now()
         });
     }
-    
+
     /**
      * Handle WebSocket open event
      */
@@ -201,7 +215,7 @@ class WebSocketService {
         this.startHeartbeat();
         this.notifyConnectionListeners(true);
     }
-    
+
     /**
      * Handle WebSocket message event
      * @param {MessageEvent} event - Message event
@@ -209,44 +223,44 @@ class WebSocketService {
     handleMessage(event) {
         try {
             const data = JSON.parse(event.data);
-            
+
             switch (data.type) {
                 case 'chat_message':
                     this.notifyMessageListeners(data);
                     break;
-                    
+
                 case 'user_joined':
                 case 'user_left':
                 case 'user_list':
                     this.notifyUserListeners(data);
                     break;
-                    
+
                 case 'typing':
                     this.notifyTypingListeners(data);
                     break;
-                    
+
                 case 'room_joined':
                     console.log('Successfully joined room:', data.roomCode);
                     break;
-                    
+
                 case 'error':
                     console.error('Server error:', data.message);
                     showToast(data.message || 'Server error', 'error');
                     break;
-                    
+
                 case 'pong':
                     this.handlePong();
                     break;
-                    
+
                 default:
                     console.log('Unknown message type:', data.type);
             }
-            
+
         } catch (error) {
             console.error('Error parsing WebSocket message:', error);
         }
     }
-    
+
     /**
      * Handle WebSocket close event
      * @param {CloseEvent} event - Close event
@@ -256,36 +270,36 @@ class WebSocketService {
         this.isConnected = false;
         this.stopHeartbeat();
         this.notifyConnectionListeners(false);
-        
+
         // Attempt to reconnect if not a clean close
         if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.attemptReconnect();
         }
     }
-    
+
     /**
      * Handle WebSocket error event
      * @param {Event} event - Error event
      */
     handleError(event) {
         console.error('WebSocket error:', event);
-        
+
         // If we can't connect initially, fall back to simulation mode
         if (!this.isConnected) {
             console.log('WebSocket connection failed, falling back to simulation mode');
             showToast('Real-time connection failed, using offline mode', 'info');
         }
     }
-    
+
     /**
      * Attempt to reconnect
      */
     attemptReconnect() {
         this.reconnectAttempts++;
         const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-        
+
         console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`);
-        
+
         setTimeout(() => {
             if (this.reconnectAttempts <= this.maxReconnectAttempts) {
                 // Note: We'd need room and user info to reconnect properly
@@ -294,17 +308,17 @@ class WebSocketService {
             }
         }, delay);
     }
-    
+
     /**
      * Start heartbeat to keep connection alive
      */
     startHeartbeat() {
         this.stopHeartbeat();
-        
+
         this.heartbeatInterval = setInterval(() => {
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
                 this.sendMessage({ type: 'ping', timestamp: Date.now() });
-                
+
                 // Set timeout for pong response
                 this.heartbeatTimeout = setTimeout(() => {
                     console.warn('Heartbeat timeout, closing connection');
@@ -313,7 +327,7 @@ class WebSocketService {
             }
         }, this.config.heartbeatInterval);
     }
-    
+
     /**
      * Stop heartbeat
      */
@@ -322,13 +336,13 @@ class WebSocketService {
             clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
         }
-        
+
         if (this.heartbeatTimeout) {
             clearTimeout(this.heartbeatTimeout);
             this.heartbeatTimeout = null;
         }
     }
-    
+
     /**
      * Handle pong response
      */
@@ -338,7 +352,7 @@ class WebSocketService {
             this.heartbeatTimeout = null;
         }
     }
-    
+
     /**
      * Check if WebSocket is supported
      * @returns {boolean} - True if WebSocket is supported
@@ -346,7 +360,7 @@ class WebSocketService {
     isSupported() {
         return typeof WebSocket !== 'undefined';
     }
-    
+
     /**
      * Get connection status
      * @returns {boolean} - True if connected
@@ -354,24 +368,24 @@ class WebSocketService {
     getConnectionStatus() {
         return this.isConnected && this.socket && this.socket.readyState === WebSocket.OPEN;
     }
-    
+
     // Event listener methods
     onMessage(callback) {
         this.messageListeners.push(callback);
     }
-    
+
     onUserListChange(callback) {
         this.userListeners.push(callback);
     }
-    
+
     onTyping(callback) {
         this.typingListeners.push(callback);
     }
-    
+
     onConnectionChange(callback) {
         this.connectionListeners.push(callback);
     }
-    
+
     // Notification methods
     notifyMessageListeners(data) {
         this.messageListeners.forEach(callback => {
@@ -382,7 +396,7 @@ class WebSocketService {
             }
         });
     }
-    
+
     notifyUserListeners(data) {
         this.userListeners.forEach(callback => {
             try {
@@ -392,7 +406,7 @@ class WebSocketService {
             }
         });
     }
-    
+
     notifyTypingListeners(data) {
         this.typingListeners.forEach(callback => {
             try {
@@ -402,7 +416,7 @@ class WebSocketService {
             }
         });
     }
-    
+
     notifyConnectionListeners(isConnected) {
         this.connectionListeners.forEach(callback => {
             try {

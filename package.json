@@ -1,0 +1,37 @@
+{
+  "name": "chatroom-app",
+  "version": "1.0.0",
+  "description": "A simple, no-registration chat application with WebSocket support",
+  "main": "index.html",
+  "scripts": {
+    "build": "npm run clean && npm run copy-files",
+    "clean": "rimraf dist",
+    "copy-files": "npm run copy-html && npm run copy-css && npm run copy-js",
+    "copy-html": "copyfiles index.html dist",
+    "copy-css": "copyfiles \"css/**/*\" dist",
+    "copy-js": "copyfiles \"js/**/*\" dist",
+    "dev": "npm run build && npm run serve",
+    "serve": "serve dist -p 3000",
+    "start": "npm run serve",
+    "preview": "npm run build && npm run serve"
+  },
+  "devDependencies": {
+    "copyfiles": "^2.4.1",
+    "rimraf": "^5.0.5",
+    "serve": "^14.2.1"
+  },
+  "keywords": [
+    "chat",
+    "websocket",
+    "real-time",
+    "html",
+    "css",
+    "javascript",
+    "vercel"
+  ],
+  "author": "ChatRoom App",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
